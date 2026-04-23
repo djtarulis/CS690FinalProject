@@ -1,0 +1,13 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.DS_Store
+
+## Rider / JetBrains
+.idea/
+
+## User data — don't commit the local watchlist
+watchlist.json
