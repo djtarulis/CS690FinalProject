@@ -22,6 +22,38 @@ public static class WatchlistService
         return entries.Where(e => e.Status == statusFilter).ToList();
     }
 
+    /// <summary>
+    /// Returns entries that contain the given tag (case-insensitive).
+    /// If tag is null or empty, all entries are returned.
+    /// </summary>
+    public static List<WatchlistEntry> FilterByTag(
+        IEnumerable<WatchlistEntry> entries,
+        string? tag)
+    {
+        if (string.IsNullOrWhiteSpace(tag))
+            return entries.ToList();
+
+        return entries
+            .Where(e => e.Tags.Any(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+    }
+
+    /// <summary>
+    /// FR-6.2 — Returns entries whose title contains the search term (case-insensitive).
+    /// If term is null or empty, all entries are returned.
+    /// </summary>
+    public static List<WatchlistEntry> Search(
+        IEnumerable<WatchlistEntry> entries,
+        string? term)
+    {
+        if (string.IsNullOrWhiteSpace(term))
+            return entries.ToList();
+
+        return entries
+            .Where(e => e.Title.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
     // ── Sorting ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -36,6 +68,7 @@ public static class WatchlistService
             "Priority"    => entries.OrderBy(e => e.Priority).ToList(),
             "Title (A-Z)" => entries.OrderBy(e => e.Title, StringComparer.OrdinalIgnoreCase).ToList(),
             "Status"      => entries.OrderBy(e => e.Status).ToList(),
+            "Watch Date"  => entries.OrderByDescending(e => e.WatchedAt).ToList(),
             _             => entries.OrderByDescending(e => e.AddedAt).ToList() // "Date Added"
         };
     }
@@ -50,8 +83,8 @@ public static class WatchlistService
         WatchlistEntry entry,
         int season,
         int episode,
-        int? totalSeasons = null,
-        int? totalEpisodes = null)
+        int? totalSeasons   = null,
+        int? totalEpisodes  = null)
     {
         entry.CurrentSeason  = season;
         entry.CurrentEpisode = episode;
@@ -65,10 +98,61 @@ public static class WatchlistService
 
     // ── Status ───────────────────────────────────────────────────────────────
 
-    /// <summary>Sets the watch status on an entry.</summary>
+    /// <summary>
+    /// Sets the watch status on an entry.
+    /// Automatically stamps WatchedAt when marked Watched (FR-1.3).
+    /// Clears WatchedAt if moved back to Watching or WantToWatch.
+    /// </summary>
     public static void SetStatus(WatchlistEntry entry, WatchStatus status)
     {
         entry.Status = status;
+        if (status == WatchStatus.Watched)
+            entry.WatchedAt ??= DateTime.Now;
+        else
+            entry.WatchedAt = null;
+    }
+
+    // ── Tags ─────────────────────────────────────────────────────────────────
+
+    /// <summary>FR-3.2 — Adds a tag to an entry if it isn't already present.</summary>
+    public static void AddTag(WatchlistEntry entry, string tag)
+    {
+        var trimmed = tag.Trim();
+        if (!string.IsNullOrEmpty(trimmed) &&
+            !entry.Tags.Any(t => t.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+            entry.Tags.Add(trimmed);
+    }
+
+    /// <summary>FR-3.2 — Removes a tag from an entry.</summary>
+    public static void RemoveTag(WatchlistEntry entry, string tag)
+    {
+        entry.Tags.RemoveAll(t => t.Equals(tag.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Returns all unique tags across all entries, sorted alphabetically.</summary>
+    public static List<string> AllTags(IEnumerable<WatchlistEntry> entries)
+    {
+        return entries
+            .SelectMany(e => e.Tags)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t)
+            .ToList();
+    }
+
+    // ── Suggest ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// FR-4.3 — Returns the highest-priority WantToWatch entry.
+    /// Ties broken by most recently added.
+    /// Returns null if the watchlist has no WantToWatch entries.
+    /// </summary>
+    public static WatchlistEntry? Suggest(IEnumerable<WatchlistEntry> entries)
+    {
+        return entries
+            .Where(e => e.Status == WatchStatus.WantToWatch)
+            .OrderBy(e => e.Priority)
+            .ThenByDescending(e => e.AddedAt)
+            .FirstOrDefault();
     }
 
     // ── Add ──────────────────────────────────────────────────────────────────
@@ -80,11 +164,12 @@ public static class WatchlistService
     public static WatchlistEntry Add(
         List<WatchlistEntry> entries,
         string title,
-        TitleType type      = TitleType.Movie,
-        WatchStatus status  = WatchStatus.WantToWatch,
-        Priority priority   = Priority.Medium,
-        string notes        = "",
-        string source       = "")
+        TitleType   type     = TitleType.Movie,
+        WatchStatus status   = WatchStatus.WantToWatch,
+        Priority    priority = Priority.Medium,
+        string      notes    = "",
+        string      source   = "",
+        string      platform = "")
     {
         var entry = new WatchlistEntry
         {
@@ -94,8 +179,12 @@ public static class WatchlistService
             Priority = priority,
             Notes    = notes,
             Source   = source,
+            Platform = platform,
             AddedAt  = DateTime.Now
         };
+        if (status == WatchStatus.Watched)
+            entry.WatchedAt = DateTime.Now;
+
         entries.Add(entry);
         return entry;
     }

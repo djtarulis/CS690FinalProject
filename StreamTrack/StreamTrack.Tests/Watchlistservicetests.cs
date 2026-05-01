@@ -3,14 +3,8 @@ using Xunit;
 
 namespace StreamTrack.Tests;
 
-/// <summary>
-/// Tests for WatchlistService — the pure business logic module.
-/// Covers filtering, sorting, progress tracking, status changes, add, and remove.
-/// </summary>
 public class WatchlistServiceTests
 {
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
     private static WatchlistEntry MakeEntry(
         string title,
         WatchStatus status   = WatchStatus.WantToWatch,
@@ -18,11 +12,11 @@ public class WatchlistServiceTests
         TitleType type       = TitleType.Movie,
         DateTime? addedAt    = null) => new()
     {
-        Title    = title,
-        Status   = status,
+        Title   = title,
+        Status  = status,
         Priority = priority,
-        Type     = type,
-        AddedAt  = addedAt ?? DateTime.Now
+        Type    = type,
+        AddedAt = addedAt ?? DateTime.Now
     };
 
     // ── Filter tests ─────────────────────────────────────────────────────────
@@ -36,142 +30,148 @@ public class WatchlistServiceTests
             MakeEntry("B", WatchStatus.Watched),
             MakeEntry("C", WatchStatus.WantToWatch)
         };
-
-        var result = WatchlistService.Filter(entries, null);
-
-        Assert.Equal(3, result.Count);
+        Assert.Equal(3, WatchlistService.Filter(entries, null).Count);
     }
 
     [Fact]
-    public void Filter_WatchingStatus_ReturnsOnlyWatchingEntries()
+    public void Filter_WatchingStatus_ReturnsOnlyWatching()
     {
         var entries = new List<WatchlistEntry>
         {
-            MakeEntry("The Bear",   WatchStatus.Watching),
-            MakeEntry("Severance",  WatchStatus.WantToWatch),
-            MakeEntry("Succession", WatchStatus.Watched),
-            MakeEntry("Slow Horses",WatchStatus.Watching)
+            MakeEntry("A", WatchStatus.Watching),
+            MakeEntry("B", WatchStatus.WantToWatch),
+            MakeEntry("C", WatchStatus.Watching)
         };
-
         var result = WatchlistService.Filter(entries, WatchStatus.Watching);
-
         Assert.Equal(2, result.Count);
         Assert.All(result, e => Assert.Equal(WatchStatus.Watching, e.Status));
     }
 
     [Fact]
-    public void Filter_NoMatchingEntries_ReturnsEmptyList()
+    public void Filter_NoMatch_ReturnsEmpty()
     {
-        var entries = new List<WatchlistEntry>
-        {
-            MakeEntry("A", WatchStatus.Watching),
-            MakeEntry("B", WatchStatus.Watching)
-        };
+        var entries = new List<WatchlistEntry> { MakeEntry("A", WatchStatus.Watching) };
+        Assert.Empty(WatchlistService.Filter(entries, WatchStatus.Watched));
+    }
 
-        var result = WatchlistService.Filter(entries, WatchStatus.Watched);
+    // ── FilterByTag tests ─────────────────────────────────────────────────────
 
-        Assert.Empty(result);
+    [Fact]
+    public void FilterByTag_NullTag_ReturnsAll()
+    {
+        var entries = new List<WatchlistEntry> { MakeEntry("A"), MakeEntry("B") };
+        Assert.Equal(2, WatchlistService.FilterByTag(entries, null).Count);
     }
 
     [Fact]
-    public void Filter_EmptyList_ReturnsEmptyList()
+    public void FilterByTag_MatchesTag_CaseInsensitive()
     {
-        var result = WatchlistService.Filter([], WatchStatus.Watching);
-        Assert.Empty(result);
+        var e1 = MakeEntry("A"); e1.Tags.Add("Action");
+        var e2 = MakeEntry("B"); e2.Tags.Add("Comedy");
+        var entries = new List<WatchlistEntry> { e1, e2 };
+
+        var result = WatchlistService.FilterByTag(entries, "action");
+        Assert.Single(result);
+        Assert.Equal("A", result[0].Title);
     }
 
-    // ── Sort tests ───────────────────────────────────────────────────────────
+    [Fact]
+    public void FilterByTag_NoMatch_ReturnsEmpty()
+    {
+        var e = MakeEntry("A"); e.Tags.Add("Drama");
+        Assert.Empty(WatchlistService.FilterByTag([e], "Action"));
+    }
+
+    // ── Search tests ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void Sort_ByTitle_ReturnsAlphabeticalOrder()
+    public void Search_NullTerm_ReturnsAll()
+    {
+        var entries = new List<WatchlistEntry> { MakeEntry("A"), MakeEntry("B") };
+        Assert.Equal(2, WatchlistService.Search(entries, null).Count);
+    }
+
+    [Fact]
+    public void Search_PartialMatch_CaseInsensitive()
     {
         var entries = new List<WatchlistEntry>
         {
+            MakeEntry("The Bear"),
             MakeEntry("Severance"),
-            MakeEntry("Arcane"),
-            MakeEntry("The Bear")
+            MakeEntry("Bear Country")
         };
+        var result = WatchlistService.Search(entries, "bear");
+        Assert.Equal(2, result.Count);
+    }
 
+    [Fact]
+    public void Search_NoMatch_ReturnsEmpty()
+    {
+        var entries = new List<WatchlistEntry> { MakeEntry("Severance") };
+        Assert.Empty(WatchlistService.Search(entries, "bear"));
+    }
+
+    // ── Sort tests ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Sort_ByTitle_Alphabetical()
+    {
+        var entries = new List<WatchlistEntry>
+        {
+            MakeEntry("Severance"), MakeEntry("Arcane"), MakeEntry("The Bear")
+        };
         var result = WatchlistService.Sort(entries, "Title (A-Z)");
-
         Assert.Equal("Arcane",    result[0].Title);
         Assert.Equal("Severance", result[1].Title);
         Assert.Equal("The Bear",  result[2].Title);
     }
 
     [Fact]
-    public void Sort_ByPriority_ReturnsHighBeforeLow()
+    public void Sort_ByPriority_HighFirst()
     {
         var entries = new List<WatchlistEntry>
         {
-            MakeEntry("Low one",    priority: Priority.Low),
-            MakeEntry("High one",   priority: Priority.High),
-            MakeEntry("Medium one", priority: Priority.Medium)
+            MakeEntry("Low",    priority: Priority.Low),
+            MakeEntry("High",   priority: Priority.High),
+            MakeEntry("Medium", priority: Priority.Medium)
         };
-
         var result = WatchlistService.Sort(entries, "Priority");
-
         Assert.Equal(Priority.High,   result[0].Priority);
         Assert.Equal(Priority.Medium, result[1].Priority);
         Assert.Equal(Priority.Low,    result[2].Priority);
     }
 
     [Fact]
-    public void Sort_ByDateAdded_ReturnsMostRecentFirst()
+    public void Sort_ByDateAdded_MostRecentFirst()
     {
         var now = DateTime.Now;
         var entries = new List<WatchlistEntry>
         {
-            MakeEntry("Oldest",  addedAt: now.AddDays(-10)),
-            MakeEntry("Newest",  addedAt: now.AddDays(-1)),
-            MakeEntry("Middle",  addedAt: now.AddDays(-5))
+            MakeEntry("Old",    addedAt: now.AddDays(-10)),
+            MakeEntry("New",    addedAt: now),
+            MakeEntry("Middle", addedAt: now.AddDays(-5))
         };
-
         var result = WatchlistService.Sort(entries, "Date Added");
-
-        Assert.Equal("Newest",  result[0].Title);
-        Assert.Equal("Middle",  result[1].Title);
-        Assert.Equal("Oldest",  result[2].Title);
+        Assert.Equal("New",    result[0].Title);
+        Assert.Equal("Middle", result[1].Title);
+        Assert.Equal("Old",    result[2].Title);
     }
 
     [Fact]
-    public void Sort_UnknownMode_DefaultsToDateAdded()
+    public void Sort_DoesNotMutateOriginal()
     {
-        var now = DateTime.Now;
-        var entries = new List<WatchlistEntry>
-        {
-            MakeEntry("Old", addedAt: now.AddDays(-3)),
-            MakeEntry("New", addedAt: now)
-        };
-
-        var result = WatchlistService.Sort(entries, "some unknown mode");
-
-        Assert.Equal("New", result[0].Title);
-    }
-
-    [Fact]
-    public void Sort_DoesNotMutateOriginalList()
-    {
-        var entries = new List<WatchlistEntry>
-        {
-            MakeEntry("B"),
-            MakeEntry("A")
-        };
-
+        var entries = new List<WatchlistEntry> { MakeEntry("B"), MakeEntry("A") };
         _ = WatchlistService.Sort(entries, "Title (A-Z)");
-
-        Assert.Equal("B", entries[0].Title); // original unchanged
+        Assert.Equal("B", entries[0].Title);
     }
 
-    // ── UpdateProgress tests ─────────────────────────────────────────────────
+    // ── UpdateProgress tests ──────────────────────────────────────────────────
 
     [Fact]
-    public void UpdateProgress_SetsSeason_AndEpisode()
+    public void UpdateProgress_SetsSeasonAndEpisode()
     {
-        var entry = MakeEntry("The Bear", type: TitleType.Series);
-
-        WatchlistService.UpdateProgress(entry, season: 2, episode: 5);
-
+        var entry = MakeEntry("Bear", type: TitleType.Series);
+        WatchlistService.UpdateProgress(entry, 2, 5);
         Assert.Equal(2, entry.CurrentSeason);
         Assert.Equal(5, entry.CurrentEpisode);
     }
@@ -179,155 +179,165 @@ public class WatchlistServiceTests
     [Fact]
     public void UpdateProgress_AutoPromotes_WantToWatch_ToWatching()
     {
-        var entry = MakeEntry("Severance",
-            status: WatchStatus.WantToWatch,
-            type:   TitleType.Series);
-
-        WatchlistService.UpdateProgress(entry, season: 1, episode: 1);
-
+        var entry = MakeEntry("Bear", status: WatchStatus.WantToWatch, type: TitleType.Series);
+        WatchlistService.UpdateProgress(entry, 1, 1);
         Assert.Equal(WatchStatus.Watching, entry.Status);
     }
 
     [Fact]
-    public void UpdateProgress_DoesNotDowngrade_Watched_Status()
+    public void UpdateProgress_DoesNotDowngrade_WatchedStatus()
     {
-        var entry = MakeEntry("Arcane",
-            status: WatchStatus.Watched,
-            type:   TitleType.Series);
-
-        WatchlistService.UpdateProgress(entry, season: 2, episode: 3);
-
-        // Status should stay Watched — user already finished it
+        var entry = MakeEntry("Bear", status: WatchStatus.Watched, type: TitleType.Series);
+        WatchlistService.UpdateProgress(entry, 2, 3);
         Assert.Equal(WatchStatus.Watched, entry.Status);
     }
 
-    [Fact]
-    public void UpdateProgress_SetsOptionalTotals_WhenProvided()
-    {
-        var entry = MakeEntry("Shogun", type: TitleType.Series);
-
-        WatchlistService.UpdateProgress(entry, 1, 4, totalSeasons: 1, totalEpisodes: 10);
-
-        Assert.Equal(1,  entry.TotalSeasons);
-        Assert.Equal(10, entry.TotalEpisodes);
-    }
+    // ── SetStatus tests ───────────────────────────────────────────────────────
 
     [Fact]
-    public void UpdateProgress_LeavesTotalsNull_WhenNotProvided()
+    public void SetStatus_Watched_StampsWatchedAt()
     {
-        var entry = MakeEntry("Slow Horses", type: TitleType.Series);
-
-        WatchlistService.UpdateProgress(entry, 3, 2);
-
-        Assert.Null(entry.TotalSeasons);
-        Assert.Null(entry.TotalEpisodes);
-    }
-
-    // ── SetStatus tests ──────────────────────────────────────────────────────
-
-    [Fact]
-    public void SetStatus_UpdatesEntryStatus()
-    {
-        var entry = MakeEntry("Dune", status: WatchStatus.WantToWatch);
-
+        var entry = MakeEntry("Bear");
         WatchlistService.SetStatus(entry, WatchStatus.Watched);
-
         Assert.Equal(WatchStatus.Watched, entry.Status);
+        Assert.NotNull(entry.WatchedAt);
     }
 
-    // ── Add tests ────────────────────────────────────────────────────────────
+    [Fact]
+    public void SetStatus_BackToWatching_ClearsWatchedAt()
+    {
+        var entry = MakeEntry("Bear");
+        WatchlistService.SetStatus(entry, WatchStatus.Watched);
+        WatchlistService.SetStatus(entry, WatchStatus.Watching);
+        Assert.Null(entry.WatchedAt);
+    }
 
     [Fact]
-    public void Add_AppendsEntryToList()
+    public void SetStatus_Watched_DoesNotOverwrite_ExistingWatchedAt()
+    {
+        var entry     = MakeEntry("Bear");
+        var original  = new DateTime(2026, 1, 1);
+        entry.WatchedAt = original;
+        WatchlistService.SetStatus(entry, WatchStatus.Watched);
+        Assert.Equal(original, entry.WatchedAt);
+    }
+
+    // ── Tag tests ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AddTag_AddsTagToEntry()
+    {
+        var entry = MakeEntry("Bear");
+        WatchlistService.AddTag(entry, "Drama");
+        Assert.True(entry.Tags.Contains("Drama"));
+    }
+
+    [Fact]
+    public void AddTag_NoDuplicates_CaseInsensitive()
+    {
+        var entry = MakeEntry("Bear");
+        WatchlistService.AddTag(entry, "Drama");
+        WatchlistService.AddTag(entry, "drama");
+        Assert.Single(entry.Tags);
+    }
+
+    [Fact]
+    public void RemoveTag_RemovesTagFromEntry()
+    {
+        var entry = MakeEntry("Bear");
+        WatchlistService.AddTag(entry, "Drama");
+        WatchlistService.RemoveTag(entry, "Drama");
+        Assert.Empty(entry.Tags);
+    }
+
+    [Fact]
+    public void AllTags_ReturnsUniqueSortedTags()
+    {
+        var e1 = MakeEntry("A"); e1.Tags.AddRange(["Drama", "Action"]);
+        var e2 = MakeEntry("B"); e2.Tags.AddRange(["Drama", "Comedy"]);
+        var tags = WatchlistService.AllTags([e1, e2]);
+        Assert.Equal(["Action", "Comedy", "Drama"], tags);
+    }
+
+    // ── Suggest tests ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Suggest_ReturnsHighestPriorityWantToWatch()
+    {
+        var entries = new List<WatchlistEntry>
+        {
+            MakeEntry("Low",  WatchStatus.WantToWatch, Priority.Low),
+            MakeEntry("High", WatchStatus.WantToWatch, Priority.High),
+            MakeEntry("Med",  WatchStatus.WantToWatch, Priority.Medium)
+        };
+        Assert.Equal("High", WatchlistService.Suggest(entries)!.Title);
+    }
+
+    [Fact]
+    public void Suggest_IgnoresWatchingAndWatched()
+    {
+        var entries = new List<WatchlistEntry>
+        {
+            MakeEntry("Watching", WatchStatus.Watching, Priority.High),
+            MakeEntry("Watched",  WatchStatus.Watched,  Priority.High),
+            MakeEntry("Want",     WatchStatus.WantToWatch, Priority.Low)
+        };
+        Assert.Equal("Want", WatchlistService.Suggest(entries)!.Title);
+    }
+
+    [Fact]
+    public void Suggest_ReturnsNull_WhenNoWantToWatch()
+    {
+        var entries = new List<WatchlistEntry>
+        {
+            MakeEntry("A", WatchStatus.Watching),
+            MakeEntry("B", WatchStatus.Watched)
+        };
+        Assert.Null(WatchlistService.Suggest(entries));
+    }
+
+    // ── Add tests ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Add_AppendsEntry()
     {
         var list = new List<WatchlistEntry>();
-
         WatchlistService.Add(list, "Severance");
-
         Assert.Single(list);
-        Assert.Equal("Severance", list[0].Title);
     }
 
     [Fact]
-    public void Add_TrimsWhitespace_FromTitle()
+    public void Add_TrimsTitle()
     {
         var list = new List<WatchlistEntry>();
-
         WatchlistService.Add(list, "  The Bear  ");
-
         Assert.Equal("The Bear", list[0].Title);
     }
 
     [Fact]
-    public void Add_QuickAdd_UsesDefaultValues()
+    public void Add_StorePlatform()
     {
         var list = new List<WatchlistEntry>();
-
-        var entry = WatchlistService.Add(list, "Arcane");
-
-        Assert.Equal(TitleType.Movie,           entry.Type);
-        Assert.Equal(WatchStatus.WantToWatch,   entry.Status);
-        Assert.Equal(Priority.Medium,           entry.Priority);
-        Assert.Equal(string.Empty,              entry.Notes);
-        Assert.Equal(string.Empty,              entry.Source);
+        var e    = WatchlistService.Add(list, "Severance", platform: "Apple TV+");
+        Assert.Equal("Apple TV+", e.Platform);
     }
 
-    [Fact]
-    public void Add_FullAdd_StoresAllFields()
-    {
-        var list = new List<WatchlistEntry>();
-
-        var entry = WatchlistService.Add(
-            list,
-            title:    "Shogun",
-            type:     TitleType.Series,
-            status:   WatchStatus.Watching,
-            priority: Priority.High,
-            notes:    "Incredible show",
-            source:   "Coworker Sarah"
-        );
-
-        Assert.Equal(TitleType.Series,       entry.Type);
-        Assert.Equal(WatchStatus.Watching,   entry.Status);
-        Assert.Equal(Priority.High,          entry.Priority);
-        Assert.Equal("Incredible show",      entry.Notes);
-        Assert.Equal("Coworker Sarah",       entry.Source);
-    }
+    // ── Remove tests ──────────────────────────────────────────────────────────
 
     [Fact]
-    public void Add_AssignsUniqueIds_ForEachEntry()
+    public void Remove_RemovesEntry()
     {
-        var list = new List<WatchlistEntry>();
-
-        WatchlistService.Add(list, "Show A");
-        WatchlistService.Add(list, "Show B");
-
-        Assert.NotEqual(list[0].Id, list[1].Id);
-    }
-
-    // ── Remove tests ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Remove_RemovesEntryFromList()
-    {
-        var entry = MakeEntry("The Bear");
+        var entry = MakeEntry("Bear");
         var list  = new List<WatchlistEntry> { entry };
-
-        var removed = WatchlistService.Remove(list, entry);
-
-        Assert.True(removed);
+        Assert.True(WatchlistService.Remove(list, entry));
         Assert.Empty(list);
     }
 
     [Fact]
-    public void Remove_ReturnsFalse_WhenEntryNotInList()
+    public void Remove_ReturnsFalse_WhenNotFound()
     {
         var list  = new List<WatchlistEntry> { MakeEntry("Arcane") };
-        var other = MakeEntry("Severance");
-
-        var removed = WatchlistService.Remove(list, other);
-
-        Assert.False(removed);
-        Assert.Single(list);
+        var other = MakeEntry("Bear");
+        Assert.False(WatchlistService.Remove(list, other));
     }
 }

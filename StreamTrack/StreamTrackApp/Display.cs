@@ -53,6 +53,7 @@ public static class Display
             .AddColumn(new TableColumn("[bold]Type[/]").Centered())
             .AddColumn(new TableColumn("[bold]Status[/]").Centered())
             .AddColumn(new TableColumn("[bold]Priority[/]").Centered())
+            .AddColumn(new TableColumn("[bold]Platform[/]").Centered())
             .AddColumn(new TableColumn("[bold]Progress[/]").Centered());
 
         for (int i = 0; i < entries.Count; i++)
@@ -64,6 +65,7 @@ public static class Display
                 TypeMarkup(e.Type),
                 StatusMarkup(e.Status),
                 PriorityMarkup(e.Priority),
+                string.IsNullOrWhiteSpace(e.Platform) ? "[grey]-[/]" : $"[steelblue1]{Markup.Escape(e.Platform)}[/]",
                 ProgressText(e)
             );
         }
@@ -91,6 +93,15 @@ public static class Display
             $"[grey]Priority:[/] {PriorityMarkup(e.Priority)}",
             $"[grey]Added:[/]    {e.AddedAt:MMM d, yyyy}"
         };
+
+        if (e.WatchedAt.HasValue)
+            lines.Add($"[grey]Watched:[/]  {e.WatchedAt.Value:MMM d, yyyy}");
+
+        if (!string.IsNullOrWhiteSpace(e.Platform))
+            lines.Add($"[grey]Platform:[/] [steelblue1]{Markup.Escape(e.Platform)}[/]");
+
+        if (e.Tags.Count > 0)
+            lines.Add($"[grey]Tags:[/]     {string.Join(", ", e.Tags.Select(t => $"[teal]{Markup.Escape(t)}[/]"))}");
 
         if (e.Type != TitleType.Movie)
         {
