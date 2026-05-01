@@ -16,24 +16,30 @@ public static class StorageService
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
     };
 
-    public static List<WatchlistEntry> Load()
+    public static List<WatchlistEntry> Load(string? filePath = null)
     {
-        if (!Directory.Exists(DataDir))
-            Directory.CreateDirectory(DataDir);
+        var path = filePath ?? DataFile;
+        var dir  = Path.GetDirectoryName(path)!;
 
-        if (!File.Exists(DataFile))
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        if (!File.Exists(path))
             return [];
 
-        var json = File.ReadAllText(DataFile);
+        var json = File.ReadAllText(path);
         return JsonSerializer.Deserialize<List<WatchlistEntry>>(json, JsonOptions) ?? [];
     }
 
-    public static void Save(List<WatchlistEntry> entries)
+    public static void Save(List<WatchlistEntry> entries, string? filePath = null)
     {
-        if (!Directory.Exists(DataDir))
-            Directory.CreateDirectory(DataDir);
+        var path = filePath ?? DataFile;
+        var dir  = Path.GetDirectoryName(path)!;
+
+        if (!Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
 
         var json = JsonSerializer.Serialize(entries, JsonOptions);
-        File.WriteAllText(DataFile, json);
+        File.WriteAllText(path, json);
     }
 }
